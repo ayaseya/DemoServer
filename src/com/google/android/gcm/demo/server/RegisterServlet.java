@@ -36,8 +36,12 @@ public class RegisterServlet extends BaseServlet {
   @Override
   protected void doPost(HttpServletRequest req, HttpServletResponse resp)
       throws ServletException {
+	  
+	// HttpServletRequestからレジストレーションIDの要素を取得  
     String regId = getParameter(req, PARAMETER_REG_ID);
+    // データストアから該当のレジストレーションIDを登録します。Datastoreクラス
     Datastore.register(regId);
+    // HttpServletResponseに処理が成功したというステータスを設定します。BaseServletクラス
     setSuccess(resp);
   }
 
