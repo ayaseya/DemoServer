@@ -40,7 +40,9 @@ import com.google.appengine.api.datastore.Transaction;
  */
 public final class Datastore {
 
-	static final int MULTICAST_SIZE = 1000;
+	static final int MULTICAST_SIZE = 1000;// 1回のクエリで取得できるエンティティ数は1000件までという制限に関係している？
+	// カインド名（テーブル名）を設定します。Device
+	// キー（プライマリーキー）の文字列となります。Device(1),Device(2),Device(3)…
 	private static final String DEVICE_TYPE = "Device";
 	private static final String DEVICE_REG_ID_PROPERTY = "regId";
 
@@ -71,6 +73,7 @@ public final class Datastore {
 	 * @param regId
 	 *            device's registration id.
 	 */
+	// レジストレーションIDを登録する処理です。
 	public static void register(String regId) {
 		logger.info("Registering " + regId);
 		// トランザクション処理を開始します。
@@ -84,7 +87,9 @@ public final class Datastore {
 				return;
 			}
 			// 登録されていなかった場合、
-			entity = new Entity(DEVICE_TYPE);// キー（プライマリーキー）を設定する
+			// カインド名を引数にエンティティのインスタンスを作成します。
+			entity = new Entity(DEVICE_TYPE);
+			// setProperty()メソッドの第一引数はプロパティー名、第２引数はプロパティーの値そのものです。
 			entity.setProperty(DEVICE_REG_ID_PROPERTY, regId);// レジストレーションIDというプロパティ（カラム）とその要素を格納します。
 			datastore.put(entity);// データストアに格納します。
 			txn.commit();// コミット…トランザクション処理の確定します。（トランザクションの処理は終了します）
@@ -101,6 +106,7 @@ public final class Datastore {
 	 * @param regId
 	 *            device's registration id.
 	 */
+	// レジストレーションIDの登録を解除する処理です。
 	public static void unregister(String regId) {
 		logger.info("Unregistering " + regId);
 		Transaction txn = datastore.beginTransaction();
@@ -123,6 +129,7 @@ public final class Datastore {
 	/**
 	 * Updates the registration id of a device.
 	 */
+	// レジストレーションIDを更新する処理です。
 	public static void updateRegistration(String oldId, String newId) {
 		logger.info("Updating " + oldId + " to " + newId);
 		Transaction txn = datastore.beginTransaction();
@@ -145,10 +152,12 @@ public final class Datastore {
 	/**
 	 * Gets all registered devices.
 	 */
+	// 現在登録されている全てのレジストレーションIDを取得しリスト形式で返す処理です。
 	public static List<String> getDevices() {
 		List<String> devices;
 		Transaction txn = datastore.beginTransaction();
 		try {
+			// キーを取得したいエンティティーが格納されているカインド名を引数に、Queryクラスのインスタンスを生成しています。
 			Query query = new Query(DEVICE_TYPE);
 			// Iterableインタフェースを実装すると、オブジェクトを「foreach」文の対象にすることができます。
 			// foreach文（フォーイーチぶん）とはプログラミング言語においてリストやハッシュテーブルなどの
@@ -173,6 +182,7 @@ public final class Datastore {
 	/**
 	 * Gets the number of total devices.
 	 */
+	// 現在登録されているデバイス数を返す処理です。
 	public static int getTotalDevices() {
 		Transaction txn = datastore.beginTransaction();
 		try {
@@ -189,12 +199,21 @@ public final class Datastore {
 			}
 		}
 	}
-
+	
+	// レジストレーションIDから一致するエンティティ（レコード(行)）を返す処理です。？
 	private static Entity findDeviceByRegId(String regId) {
 		Query query = new Query(DEVICE_TYPE).addFilter(DEVICE_REG_ID_PROPERTY,
 				FilterOperator.EQUAL, regId);
+		// Queryクラスからエンティティーを取得するには、QueryのインスタンスからPreparedQueryクラスのインスタンスを生成します。
 		PreparedQuery preparedQuery = datastore.prepare(query);
-		List<Entity> entities = preparedQuery.asList(DEFAULT_FETCH_OPTIONS);
+		List<Entity> entities = preparedQuery.asList(DEFAULT_FETCH_OPTIONS);// 1000件超えた時はどうなる？
+		
+//		for(Entity empEntity : preparedQuery.asIterable()){// 1000件以上取得する場合には拡張for分で全件取得する？
+//		     System.out.println(
+//		          empEntity.getKind() + " - " + empEntity.getKey() );
+//		}
+		
+		
 		Entity entity = null;
 		if (!entities.isEmpty()) {
 			entity = entities.get(0);
@@ -215,16 +234,19 @@ public final class Datastore {
 	 *            registration ids of the devices.
 	 * @return encoded key for the persistent record.
 	 */
-	public static String createMulticast(List<String> devices) {
+	
+	// http://docs.oracle.com/javase/jp/6/api/java/net/MulticastSocket.html
+	// https://developers.google.com/appengine/docs/java/javadoc/com/google/appengine/api/datastore/KeyFactory#keyToString(com.google.appengine.api.datastore.Key)
+	public static String createMulticast(List<String> devices) {// 引数は全てのレジストレーションIDです。
 		logger.info("Storing multicast for " + devices.size() + " devices");
 		String encodedKey;
 		Transaction txn = datastore.beginTransaction();
 		try {
 			Entity entity = new Entity(MULTICAST_TYPE);
-			entity.setProperty(MULTICAST_REG_IDS_PROPERTY, devices);
+			entity.setProperty(MULTICAST_REG_IDS_PROPERTY, devices);// レジストレーションIDというプロパティ（カラム）とその要素を格納します。？
 			datastore.put(entity);
-			Key key = entity.getKey();
-			encodedKey = KeyFactory.keyToString(key);
+			Key key = entity.getKey();// 該当のエンティティを示すキー（プライマリキー）を返します。
+			encodedKey = KeyFactory.keyToString(key);// keyを指定してWebセーフ文字列表現に変換します。
 			logger.fine("multicast key: " + encodedKey);
 			txn.commit();
 		} finally {

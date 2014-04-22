@@ -15,12 +15,6 @@
  */
 package com.google.android.gcm.demo.server;
 
-import com.google.android.gcm.server.Constants;
-import com.google.android.gcm.server.Message;
-import com.google.android.gcm.server.MulticastResult;
-import com.google.android.gcm.server.Result;
-import com.google.android.gcm.server.Sender;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,11 +25,20 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import com.google.android.gcm.server.Constants;
+import com.google.android.gcm.server.Message;
+import com.google.android.gcm.server.MulticastResult;
+import com.google.android.gcm.server.Result;
+import com.google.android.gcm.server.Sender;
+
 /**
  * Servlet that sends a message to a device.
  * <p>
  * This servlet is invoked by AppEngine's Push Queue mechanism.
  */
+// このサーブレットはGAEのタスクキュー（queue）の仕組みにより呼びだされます。
+// GAEではリクエストの処理時間に制限があるため、メールの大量送信などの処理などに対応する場合には
+// タスクキューを使用して送信処理を分割します。
 @SuppressWarnings("serial")
 public class SendMessageServlet extends BaseServlet {
 
@@ -67,14 +70,14 @@ public class SendMessageServlet extends BaseServlet {
    * Indicates to App Engine that this task should be retried.
    */
   private void retryTask(HttpServletResponse resp) {
-    resp.setStatus(500);
+    resp.setStatus(500);// 500=SC_INTERNAL_SERVER_ERROR…サーバー側の問題によりエラーが発生した場合のステータスです。
   }
 
   /**
    * Indicates to App Engine that this task is done.
    */
   private void taskDone(HttpServletResponse resp) {
-    resp.setStatus(200);
+    resp.setStatus(200);// 200=SC_OK…正常にデータが送信できた場合のステータスです。
   }
 
   /**
@@ -86,31 +89,36 @@ public class SendMessageServlet extends BaseServlet {
     if (req.getHeader(HEADER_QUEUE_NAME) == null) {
       throw new IOException("Missing header " + HEADER_QUEUE_NAME);
     }
+    // ヘッダー名に対応するHTTPヘッダ情報を返します。
+    // HEADER_QUEUE_COUNT="X-AppEngine-TaskRetryCount"
     String retryCountHeader = req.getHeader(HEADER_QUEUE_COUNT);
     logger.fine("retry count: " + retryCountHeader);
     if (retryCountHeader != null) {
       int retryCount = Integer.parseInt(retryCountHeader);
-      if (retryCount > MAX_RETRY) {
+      if (retryCount > MAX_RETRY) {// リトライ回数が設定していた回数を超えると処理を中止します。
           logger.severe("Too many retries, dropping task");
           taskDone(resp);
           return;
       }
     }
+    // 
     String regId = req.getParameter(PARAMETER_DEVICE);
     if (regId != null) {
-      sendSingleMessage(regId, resp);
+      sendSingleMessage(regId, resp);// 1端末だった場合、メッセージを送信します。
       return;
     }
+    // 
     String multicastKey = req.getParameter(PARAMETER_MULTICAST);
     if (multicastKey != null) {
-      sendMulticastMessage(multicastKey, resp);
+      sendMulticastMessage(multicastKey, resp);// 複数端末だった場合、メッセージを送信します。
       return;
     }
-    logger.severe("Invalid request!");
+    logger.severe("Invalid request!");// 
     taskDone(resp);
     return;
   }
-
+  
+  // 1端末にメッセージを送信する場合の処理
   private void sendSingleMessage(String regId, HttpServletResponse resp) {
     logger.info("Sending message to device " + regId);
     Message message = new Message.Builder().build();
@@ -126,15 +134,20 @@ public class SendMessageServlet extends BaseServlet {
       retryTask(resp);
       return;
     }
-    if (result.getMessageId() != null) {
+    if (result.getMessageId() != null) {// メッセージが正常に作成されると、getMessageId（）は、メッセージIDを返します。
       logger.info("Succesfully sent message to device " + regId);
       String canonicalRegId = result.getCanonicalRegistrationId();
       if (canonicalRegId != null) {
         // same device has more than on registration id: update it
+    	// http://kinsentansa.blogspot.jp/2013/04/gcmcanonical-registration-id.html
+    	// 「アプリケーションのアップデート」や「バックアップとリストア」などにより、
+    	// GCMサーバーに同じデバイスで複数のRegistration ID（以下regId）が割り振られる場合があり、
+    	// その場合にcanonicalRegIdが取得できる状況となります。
+    	// その場合には、データストアを更新します。
         logger.finest("canonicalRegId " + canonicalRegId);
         Datastore.updateRegistration(regId, canonicalRegId);
       }
-    } else {
+    } else {// メッセージが正常に作成されないと、getMessageId()は、Nullを返します。
       String error = result.getErrorCodeName();
       if (error.equals(Constants.ERROR_NOT_REGISTERED)) {
         // application has been removed from device - unregister it
@@ -145,7 +158,7 @@ public class SendMessageServlet extends BaseServlet {
       }
     }
   }
-
+  // 全端末にメッセージを送信する場合の処理
   private void sendMulticastMessage(String multicastKey,
       HttpServletResponse resp) {
     // Recover registration ids from datastore
