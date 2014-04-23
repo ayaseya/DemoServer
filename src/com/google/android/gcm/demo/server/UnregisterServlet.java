@@ -15,6 +15,8 @@
  */
 package com.google.android.gcm.demo.server;
 
+import java.util.logging.Logger;
+
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -29,19 +31,19 @@ import javax.servlet.http.HttpServletResponse;
  */
 @SuppressWarnings("serial")
 public class UnregisterServlet extends BaseServlet {
+	private final Logger logger = Logger.getLogger(getClass().getName());
+	private static final String PARAMETER_REG_ID = "regId";
 
-  private static final String PARAMETER_REG_ID = "regId";
-
-  @Override
-  protected void doPost(HttpServletRequest req, HttpServletResponse resp)
-      throws ServletException {
-	 
-	// HttpServletRequestからレジストレーションIDの要素を取得
-    String regId = getParameter(req, PARAMETER_REG_ID);
-    // データストアから該当のレジストレーションIDを削除します。Datastoreクラス
-    Datastore.unregister(regId);
-    // HttpServletResponseに処理が成功したというステータスを設定します。BaseServletクラス
-    setSuccess(resp);
-  }
+	@Override
+	protected void doPost(HttpServletRequest req, HttpServletResponse resp)
+			throws ServletException {
+		logger.info("UnregisterServletが呼び出されました");
+		// HttpServletRequestからレジストレーションIDの要素を取得
+		String regId = getParameter(req, PARAMETER_REG_ID);
+		// データストアから該当のレジストレーションIDを削除します。Datastoreクラス
+		Datastore.unregister(regId);
+		// HttpServletResponseに処理が成功したというステータスを設定します。BaseServletクラス
+		setSuccess(resp);
+	}
 
 }

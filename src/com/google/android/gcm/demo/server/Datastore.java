@@ -154,6 +154,7 @@ public final class Datastore {
 	 */
 	// 現在登録されている全てのレジストレーションIDを取得しリスト形式で返す処理です。
 	public static List<String> getDevices() {
+		logger.info("getDevices()");
 		List<String> devices;
 		Transaction txn = datastore.beginTransaction();
 		try {
@@ -184,6 +185,7 @@ public final class Datastore {
 	 */
 	// 現在登録されているデバイス数を返す処理です。
 	public static int getTotalDevices() {
+		logger.info("getTotalDevices()");
 		Transaction txn = datastore.beginTransaction();
 		try {
 			Query query = new Query(DEVICE_TYPE).setKeysOnly();
@@ -202,6 +204,7 @@ public final class Datastore {
 	
 	// レジストレーションIDから一致するエンティティ（レコード(行)）を返す処理です。？
 	private static Entity findDeviceByRegId(String regId) {
+		logger.info("findDeviceByRegId()");
 		Query query = new Query(DEVICE_TYPE).addFilter(DEVICE_REG_ID_PROPERTY,
 				FilterOperator.EQUAL, regId);
 		// Queryクラスからエンティティーを取得するには、QueryのインスタンスからPreparedQueryクラスのインスタンスを生成します。
@@ -212,7 +215,6 @@ public final class Datastore {
 //		     System.out.println(
 //		          empEntity.getKind() + " - " + empEntity.getKey() );
 //		}
-		
 		
 		Entity entity = null;
 		if (!entities.isEmpty()) {
@@ -238,6 +240,7 @@ public final class Datastore {
 	// http://docs.oracle.com/javase/jp/6/api/java/net/MulticastSocket.html
 	// https://developers.google.com/appengine/docs/java/javadoc/com/google/appengine/api/datastore/KeyFactory#keyToString(com.google.appengine.api.datastore.Key)
 	public static String createMulticast(List<String> devices) {// 引数は全てのレジストレーションIDです。
+		logger.info("createMulticast()");
 		logger.info("Storing multicast for " + devices.size() + " devices");
 		String encodedKey;
 		Transaction txn = datastore.beginTransaction();
@@ -265,6 +268,7 @@ public final class Datastore {
 	 *            encoded key for the persistent record.
 	 */
 	public static List<String> getMulticast(String encodedKey) {
+		logger.info("getMulticast()");
 		Key key = KeyFactory.stringToKey(encodedKey);
 		Entity entity;
 		Transaction txn = datastore.beginTransaction();
@@ -295,6 +299,7 @@ public final class Datastore {
 	 *            new list of registration ids of the devices.
 	 */
 	public static void updateMulticast(String encodedKey, List<String> devices) {
+		logger.info("updateMulticast()");
 		Key key = KeyFactory.stringToKey(encodedKey);
 		Entity entity;
 		Transaction txn = datastore.beginTransaction();
@@ -323,6 +328,7 @@ public final class Datastore {
 	 *            encoded key for the persistent record.
 	 */
 	public static void deleteMulticast(String encodedKey) {
+		logger.info("deleteMulticast()");
 		Transaction txn = datastore.beginTransaction();
 		try {
 			Key key = KeyFactory.stringToKey(encodedKey);

@@ -42,183 +42,187 @@ import com.google.android.gcm.server.Sender;
 @SuppressWarnings("serial")
 public class SendMessageServlet extends BaseServlet {
 
-  private static final String HEADER_QUEUE_COUNT = "X-AppEngine-TaskRetryCount";
-  private static final String HEADER_QUEUE_NAME = "X-AppEngine-QueueName";
-  private static final int MAX_RETRY = 3;
+	private static final String HEADER_QUEUE_COUNT = "X-AppEngine-TaskRetryCount";
+	private static final String HEADER_QUEUE_NAME = "X-AppEngine-QueueName";
+	private static final int MAX_RETRY = 3;
 
-  static final String PARAMETER_DEVICE = "device";
-  static final String PARAMETER_MULTICAST = "multicastKey";
+	static final String PARAMETER_DEVICE = "device";
+	static final String PARAMETER_MULTICAST = "multicastKey";
 
-  private Sender sender;
+	private Sender sender;
 
-  @Override
-  public void init(ServletConfig config) throws ServletException {
-    super.init(config);
-    sender = newSender(config);
-  }
+	@Override
+	public void init(ServletConfig config) throws ServletException {
+		super.init(config);
+		sender = newSender(config);
+	}
 
-  /**
-   * Creates the {@link Sender} based on the servlet settings.
-   */
-  protected Sender newSender(ServletConfig config) {
-    String key = (String) config.getServletContext()
-        .getAttribute(ApiKeyInitializer.ATTRIBUTE_ACCESS_KEY);
-    return new Sender(key);
-  }
+	/**
+	 * Creates the {@link Sender} based on the servlet settings.
+	 */
+	protected Sender newSender(ServletConfig config) {
+		String key = (String) config.getServletContext().getAttribute(
+				ApiKeyInitializer.ATTRIBUTE_ACCESS_KEY);
+		return new Sender(key);
+	}
 
-  /**
-   * Indicates to App Engine that this task should be retried.
-   */
-  private void retryTask(HttpServletResponse resp) {
-    resp.setStatus(500);// 500=SC_INTERNAL_SERVER_ERROR…サーバー側の問題によりエラーが発生した場合のステータスです。
-  }
+	/**
+	 * Indicates to App Engine that this task should be retried.
+	 */
+	private void retryTask(HttpServletResponse resp) {
+		resp.setStatus(500);// 500=SC_INTERNAL_SERVER_ERROR…サーバー側の問題によりエラーが発生した場合のステータスです。
+	}
 
-  /**
-   * Indicates to App Engine that this task is done.
-   */
-  private void taskDone(HttpServletResponse resp) {
-    resp.setStatus(200);// 200=SC_OK…正常にデータが送信できた場合のステータスです。
-  }
+	/**
+	 * Indicates to App Engine that this task is done.
+	 */
+	private void taskDone(HttpServletResponse resp) {
+		resp.setStatus(200);// 200=SC_OK…正常にデータが送信できた場合のステータスです。
+	}
 
-  /**
-   * Processes the request to add a new message.
-   */
-  @Override
-  protected void doPost(HttpServletRequest req, HttpServletResponse resp)
-      throws IOException {
-    if (req.getHeader(HEADER_QUEUE_NAME) == null) {
-      throw new IOException("Missing header " + HEADER_QUEUE_NAME);
-    }
-    // ヘッダー名に対応するHTTPヘッダ情報を返します。
-    // HEADER_QUEUE_COUNT="X-AppEngine-TaskRetryCount"
-    String retryCountHeader = req.getHeader(HEADER_QUEUE_COUNT);
-    logger.fine("retry count: " + retryCountHeader);
-    if (retryCountHeader != null) {
-      int retryCount = Integer.parseInt(retryCountHeader);
-      if (retryCount > MAX_RETRY) {// リトライ回数が設定していた回数を超えると処理を中止します。
-          logger.severe("Too many retries, dropping task");
-          taskDone(resp);
-          return;
-      }
-    }
-    // 
-    String regId = req.getParameter(PARAMETER_DEVICE);
-    if (regId != null) {
-      sendSingleMessage(regId, resp);// 1端末だった場合、メッセージを送信します。
-      return;
-    }
-    // 
-    String multicastKey = req.getParameter(PARAMETER_MULTICAST);
-    if (multicastKey != null) {
-      sendMulticastMessage(multicastKey, resp);// 複数端末だった場合、メッセージを送信します。
-      return;
-    }
-    logger.severe("Invalid request!");// 
-    taskDone(resp);
-    return;
-  }
-  
-  // 1端末にメッセージを送信する場合の処理
-  private void sendSingleMessage(String regId, HttpServletResponse resp) {
-    logger.info("Sending message to device " + regId);
-    Message message = new Message.Builder().build();
-    Result result;
-    try {
-      result = sender.sendNoRetry(message, regId);
-    } catch (IOException e) {
-      logger.log(Level.SEVERE, "Exception posting " + message, e);
-      taskDone(resp);
-      return;
-    }
-    if (result == null) {
-      retryTask(resp);
-      return;
-    }
-    if (result.getMessageId() != null) {// メッセージが正常に作成されると、getMessageId（）は、メッセージIDを返します。
-      logger.info("Succesfully sent message to device " + regId);
-      String canonicalRegId = result.getCanonicalRegistrationId();
-      if (canonicalRegId != null) {
-        // same device has more than on registration id: update it
-    	// http://kinsentansa.blogspot.jp/2013/04/gcmcanonical-registration-id.html
-    	// 「アプリケーションのアップデート」や「バックアップとリストア」などにより、
-    	// GCMサーバーに同じデバイスで複数のRegistration ID（以下regId）が割り振られる場合があり、
-    	// その場合にcanonicalRegIdが取得できる状況となります。
-    	// その場合には、データストアを更新します。
-        logger.finest("canonicalRegId " + canonicalRegId);
-        Datastore.updateRegistration(regId, canonicalRegId);
-      }
-    } else {// メッセージが正常に作成されないと、getMessageId()は、Nullを返します。
-      String error = result.getErrorCodeName();
-      if (error.equals(Constants.ERROR_NOT_REGISTERED)) {
-        // application has been removed from device - unregister it
-        Datastore.unregister(regId);
-      } else {
-        logger.severe("Error sending message to device " + regId
-            + ": " + error);
-      }
-    }
-  }
-  // 全端末にメッセージを送信する場合の処理
-  private void sendMulticastMessage(String multicastKey,
-      HttpServletResponse resp) {
-    // Recover registration ids from datastore
-    List<String> regIds = Datastore.getMulticast(multicastKey);
-    Message message = new Message.Builder().build();
-    MulticastResult multicastResult;
-    try {
-      multicastResult = sender.sendNoRetry(message, regIds);
-    } catch (IOException e) {
-      logger.log(Level.SEVERE, "Exception posting " + message, e);
-      multicastDone(resp, multicastKey);
-      return;
-    }
-    boolean allDone = true;
-    // check if any registration id must be updated
-    if (multicastResult.getCanonicalIds() != 0) {
-      List<Result> results = multicastResult.getResults();
-      for (int i = 0; i < results.size(); i++) {
-        String canonicalRegId = results.get(i).getCanonicalRegistrationId();
-        if (canonicalRegId != null) {
-          String regId = regIds.get(i);
-          Datastore.updateRegistration(regId, canonicalRegId);
-        }
-      }
-    }
-    if (multicastResult.getFailure() != 0) {
-      // there were failures, check if any could be retried
-      List<Result> results = multicastResult.getResults();
-      List<String> retriableRegIds = new ArrayList<String>();
-      for (int i = 0; i < results.size(); i++) {
-        String error = results.get(i).getErrorCodeName();
-        if (error != null) {
-          String regId = regIds.get(i);
-          logger.warning("Got error (" + error + ") for regId " + regId);
-          if (error.equals(Constants.ERROR_NOT_REGISTERED)) {
-            // application has been removed from device - unregister it
-            Datastore.unregister(regId);
-          }
-          if (error.equals(Constants.ERROR_UNAVAILABLE)) {
-            retriableRegIds.add(regId);
-          }
-        }
-      }
-      if (!retriableRegIds.isEmpty()) {
-        // update task
-        Datastore.updateMulticast(multicastKey, retriableRegIds);
-        allDone = false;
-        retryTask(resp);
-      }
-    }
-    if (allDone) {
-      multicastDone(resp, multicastKey);
-    } else {
-      retryTask(resp);
-    }
-  }
+	/**
+	 * Processes the request to add a new message.
+	 */
+	@Override
+	protected void doPost(HttpServletRequest req, HttpServletResponse resp)
+			throws IOException {
+		if (req.getHeader(HEADER_QUEUE_NAME) == null) {
+			throw new IOException("Missing header " + HEADER_QUEUE_NAME);
+		}
+		// ヘッダー名に対応するHTTPヘッダ情報を返します。
+		// HEADER_QUEUE_COUNT="X-AppEngine-TaskRetryCount"
+		String retryCountHeader = req.getHeader(HEADER_QUEUE_COUNT);
+		logger.fine("retry count: " + retryCountHeader);
+		if (retryCountHeader != null) {
+			int retryCount = Integer.parseInt(retryCountHeader);
+			if (retryCount > MAX_RETRY) {// リトライ回数が設定していた回数を超えると処理を中止します。
+				logger.severe("Too many retries, dropping task");
+				taskDone(resp);
+				return;
+			}
+		}
+		//
+		String regId = req.getParameter(PARAMETER_DEVICE);
+		if (regId != null) {
+			sendSingleMessage(regId, resp);// 1端末だった場合、メッセージを送信します。
+			return;
+		}
+		//
+		String multicastKey = req.getParameter(PARAMETER_MULTICAST);
+		if (multicastKey != null) {
+			sendMulticastMessage(multicastKey, resp);// 複数端末だった場合、メッセージを送信します。
+			return;
+		}
+		logger.severe("Invalid request!");//
+		taskDone(resp);
+		return;
+	}
 
-  private void multicastDone(HttpServletResponse resp, String encodedKey) {
-    Datastore.deleteMulticast(encodedKey);
-    taskDone(resp);
-  }
+	// 1端末にメッセージを送信する場合の処理
+	private void sendSingleMessage(String regId, HttpServletResponse resp) {
+		logger.info("Sending message to device " + regId);
+		Message message = new Message.Builder().build();
+		Result result;
+		try {
+			result = sender.sendNoRetry(message, regId);
+		} catch (IOException e) {
+			logger.log(Level.SEVERE, "Exception posting " + message, e);
+			taskDone(resp);
+			return;
+		}
+		if (result == null) {
+			retryTask(resp);
+			return;
+		}
+		if (result.getMessageId() != null) {// メッセージが正常に作成されると、getMessageId（）は、メッセージIDを返します。
+			logger.info("Succesfully sent message to device " + regId);
+			String canonicalRegId = result.getCanonicalRegistrationId();
+			if (canonicalRegId != null) {
+				// same device has more than on registration id: update it
+				// http://kinsentansa.blogspot.jp/2013/04/gcmcanonical-registration-id.html
+				// 「アプリケーションのアップデート」や「バックアップとリストア」などにより、
+				// GCMサーバーに同じデバイスで複数のRegistration ID（以下regId）が割り振られる場合があり、
+				// その場合にcanonicalRegIdが取得できる状況となります。
+				// その場合には、データストアを更新します。
+				logger.finest("canonicalRegId " + canonicalRegId);
+				Datastore.updateRegistration(regId, canonicalRegId);
+			}
+		} else {// メッセージが正常に作成されないと、getMessageId()は、Nullを返します。
+			String error = result.getErrorCodeName();
+			if (error.equals(Constants.ERROR_NOT_REGISTERED)) {
+				// application has been removed from device - unregister it
+				Datastore.unregister(regId);
+			} else {
+				logger.severe("Error sending message to device " + regId + ": "
+						+ error);
+			}
+		}
+	}
+
+	// 全端末にメッセージを送信する場合の処理
+	private void sendMulticastMessage(String multicastKey,
+			HttpServletResponse resp) {
+		// Recover registration ids from datastore
+		List<String> regIds = Datastore.getMulticast(multicastKey);// データストアからレジストレーションIDを取得します。？
+		Message message = new Message.Builder().build();
+		MulticastResult multicastResult;
+		try {
+			multicastResult = sender.sendNoRetry(message, regIds);
+		} catch (IOException e) {
+			logger.log(Level.SEVERE, "Exception posting " + message, e);
+			multicastDone(resp, multicastKey);
+			return;
+		}
+		boolean allDone = true;
+		// check if any registration id must be updated
+		if (multicastResult.getCanonicalIds() != 0) {// 送信に成功したレジストレーションIDの数を取得します。
+			List<Result> results = multicastResult.getResults();// 個々の送信結果をリスト形式で返します。
+			for (int i = 0; i < results.size(); i++) {
+				String canonicalRegId = results.get(i)
+						.getCanonicalRegistrationId();// 更新する必要があるIDがあれば返します。
+				if (canonicalRegId != null) {
+					String regId = regIds.get(i);
+					Datastore.updateRegistration(regId, canonicalRegId);
+				}
+			}
+		}
+		if (multicastResult.getFailure() != 0) {// 送信が失敗していたケースが存在する場合の処理です。
+			// there were failures, check if any could be retried
+			List<Result> results = multicastResult.getResults();
+			List<String> retriableRegIds = new ArrayList<String>();
+			for (int i = 0; i < results.size(); i++) {
+				String error = results.get(i).getErrorCodeName();
+				if (error != null) {
+					String regId = regIds.get(i);
+					logger.warning("Got error (" + error + ") for regId "
+							+ regId);
+					if (error.equals(Constants.ERROR_NOT_REGISTERED)) {// NotRegistered
+						// application has been removed from device - unregister
+						// it
+						Datastore.unregister(regId);
+					}
+					if (error.equals(Constants.ERROR_UNAVAILABLE)) {// Unavailable
+						retriableRegIds.add(regId);
+					}
+				}
+			}
+			if (!retriableRegIds.isEmpty()) {// リトライするべきIDが存在した場合の処理です。
+				// update task
+				Datastore.updateMulticast(multicastKey, retriableRegIds);
+				allDone = false;
+				retryTask(resp);
+			}
+		}
+		if (allDone) {
+			multicastDone(resp, multicastKey);
+		} else {
+			retryTask(resp);
+		}
+	}
+
+	private void multicastDone(HttpServletResponse resp, String encodedKey) {
+		Datastore.deleteMulticast(encodedKey);
+		taskDone(resp);
+	}
 
 }

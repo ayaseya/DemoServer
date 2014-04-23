@@ -42,8 +42,9 @@ public class ApiKeyInitializer implements ServletContextListener {
 
 	private final Logger logger = Logger.getLogger(getClass().getName());
 
-	// Web アプリケーションが初期化処理を開始したことを通知します。
+	// Webアプリケーションが初期化処理を開始したことを通知します。
 	public void contextInitialized(ServletContextEvent event) {
+		logger.info("ApiKeyInitializerが呼び出されました");
 		DatastoreService datastore = DatastoreServiceFactory
 				.getDatastoreService();
 		Key key = KeyFactory.createKey(ENTITY_KIND, ENTITY_KEY);
@@ -73,6 +74,8 @@ public class ApiKeyInitializer implements ServletContextListener {
 
 	// Servlet コンテキストがシャットダウン処理に入ることを通知します。
 	public void contextDestroyed(ServletContextEvent event) {
+		logger.info("ServletContextがシャットダウン処理に入りました");
 	}
+	
 
 }
